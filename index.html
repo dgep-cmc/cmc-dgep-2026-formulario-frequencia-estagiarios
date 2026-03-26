@@ -105,6 +105,7 @@
                 <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">
                     📄 Gerar Relatório e Ir para o Envio
                 </button>
+                <p class="small text-muted">O sistema fará o download do arquivo e abrirá a tela de anexo automaticamente.</p>
                 <div class="text-start mt-4">
                     <button id="btnLimpar" class="btn btn-outline-secondary btn-sm fw-bold">🔄 Limpar Tela</button>
                 </div>
@@ -167,22 +168,15 @@
         const lotSelected = e.target.value;
         const respInput = document.getElementById("selectResponsavel");
         const respDatalist = document.getElementById("listaResponsaveisDatalist");
-        
         respDatalist.innerHTML = "";
         respInput.value = "";
         document.getElementById("areaTabela").classList.add("d-none");
-
         if (!lotSelected) return;
-
         const estagiariosLotacao = baseGeral.filter(s => buscarValorInteligente(s, ["lotacao"]) === lotSelected);
         const responsaveis = [...new Set(estagiariosLotacao.map(s => buscarValorInteligente(s, ["vereador", "responsavel"])))].filter(Boolean);
-
         respDatalist.innerHTML = responsaveis.map(r => `<option value="${r}">`).join('');
         respInput.disabled = false;
-        respInput.placeholder = "Selecione o responsável...";
-
         if (responsaveis.length === 1) respInput.value = responsaveis[0];
-        
         montarTabela(estagiariosLotacao, lotSelected);
     });
 
@@ -190,7 +184,6 @@
         const tbody = document.getElementById("tabelaBody");
         tbody.innerHTML = "";
         document.getElementById("spanLotacao").textContent = lotacao;
-
         servidores.forEach((servidor, i) => {
             const mat = buscarValorInteligente(servidor, ["matricula"]);
             const nome = buscarValorInteligente(servidor, ["nome"]);
@@ -199,24 +192,20 @@
             const fal = buscarValorInteligente(servidor, ["falta"]);
             const ate = buscarValorInteligente(servidor, ["atestado"]);
             const parcial = (rec.trim() !== "" || fal.trim() !== "" || ate.trim() !== "");
-
             tbody.innerHTML += `
                 <tr>
                     <td><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked></td>
                     <td class="text-secondary fw-bold text-start">${mat}</td>
                     <td class="text-dark text-start">${nome}</td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="periodo-${i}" value="${per}"></td>
-                    <td>
-                        <select class="form-select form-select-sm" id="presenca-${i}" onchange="toggleCamposJustificativa(${i})">
-                            <option value="integral" ${!parcial ? "selected" : ""}>Integral</option>
-                            <option value="parcial" ${parcial ? "selected" : ""}>Parcial</option>
-                        </select>
-                    </td>
+                    <td><select class="form-select form-select-sm" id="presenca-${i}" onchange="toggleCamposJustificativa(${i})">
+                        <option value="integral" ${!parcial ? "selected" : ""}>Integral</option>
+                        <option value="parcial" ${parcial ? "selected" : ""}>Parcial</option>
+                    </select></td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="faltas-${i}" value="${fal}" ${parcial ? '' : 'disabled'}></td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="atestados-${i}" value="${ate}" ${parcial ? '' : 'disabled'}></td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="ferias-${i}" value="${rec}" ${parcial ? '' : 'disabled'}></td>
-                </tr>
-            `;
+                </tr>`;
         });
         document.getElementById("areaTabela").classList.remove("d-none");
     }
@@ -225,13 +214,11 @@
         const p = document.getElementById(`presenca-${i}`).value === "integral";
         [`faltas-${i}`, `atestados-${i}`, `ferias-${i}`].forEach(id => {
             const el = document.getElementById(id);
-            el.disabled = p;
-            if(p) el.value = "";
+            el.disabled = p; if(p) el.value = "";
         });
     }
 
     window.toggleAllChecks = (s) => document.querySelectorAll('.check-servidor').forEach(c => c.checked = s.checked);
-
     document.getElementById("btnLimpar").addEventListener("click", () => location.reload());
 
     document.getElementById("btnGerarPDF").addEventListener("click", () => {
@@ -239,58 +226,86 @@
         const responsavel = document.getElementById("selectResponsavel").value;
         const email = document.getElementById("inputEmail").value.trim();
         const lotacao = document.getElementById("spanLotacao").textContent;
-
-        if(!responsavel || !email.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("Verifique o responsável e o e-mail institucional!");
+        if(!mesAno || !responsavel || !email.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("Preencha todos os campos corretamente!");
 
         const dadosPDF = [];
-        const registrosSalvar = [];
         document.querySelectorAll("#tabelaBody tr").forEach((tr, i) => {
             if (document.getElementById(`check-${i}`).checked) {
-                const linha = [
+                dadosPDF.push([
                     tr.cells[1].innerText, tr.cells[2].innerText, lotacao,
                     document.getElementById(`periodo-${i}`).value,
                     document.getElementById(`presenca-${i}`).value.toUpperCase(),
                     document.getElementById(`faltas-${i}`).value || "-",
                     document.getElementById(`atestados-${i}`).value || "-",
                     document.getElementById(`ferias-${i}`).value || "-"
-                ];
-                dadosPDF.push(linha);
-                registrosSalvar.push(linha);
+                ]);
             }
         });
 
-        fetch(URL_APPSCRIPT_SALVAR, {
-            method: "POST", mode: "no-cors",
-            body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosSalvar })
-        });
+        // Envio para o Sheets
+        fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ mesAno, vereador: responsavel, registros: dadosPDF }) });
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
-        const [ano, mes] = mesAno.split('-');
-        
-        doc.setFontSize(11); doc.setFont("helvetica", "bold");
-        doc.text("FORMULÁRIO DE FREQUÊNCIA DE ESTAGIÁRIOS", 105, 20, {align: 'center'});
+        const [ano, mesNum] = mesAno.split('-');
+        const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+        const nomeMes = meses[parseInt(mesNum) - 1].toLowerCase();
+
+        // --- INÍCIO DO PADRÃO VISUAL INSTITUCIONAL ---
+        let logoWidth = 35; let logoHeight = 15;
+        try {
+            const img = document.getElementById("imgLogo");
+            if (img.complete && img.naturalHeight !== 0) {
+                const ratio = img.naturalWidth / img.naturalHeight;
+                logoHeight = logoWidth / ratio;
+                doc.addImage(img, 'PNG', 14, 12, logoWidth, logoHeight);
+            }
+        } catch(e) {}
+        const posXBarra = 14 + logoWidth + 5;
+        doc.setLineWidth(0.5); doc.setDrawColor(180, 180, 180);
+        doc.line(posXBarra, 12, posXBarra, 12 + Math.max(logoHeight, 14));
+        doc.setTextColor(0, 0, 0); doc.setFontSize(11); doc.setFont("helvetica", "bold");
+        doc.text("FORMULÁRIO DE FREQUÊNCIA DE ESTAGIÁRIOS", posXBarra + 5, 12 + 6);
         doc.setFontSize(10); doc.setFont("helvetica", "normal");
-        doc.text(`Lotação: ${lotacao}`, 14, 35);
-        doc.text(`Responsável: ${responsavel}`, 14, 40);
+        doc.text("À Diretoria de Gestão de Pessoas (DGEP),", 14, 43);
+        doc.text(`Informamos o controle de frequência dos estagiários vinculados a este gabinete/lotação, referente ao mês de ${nomeMes} de ${ano}.`, 14, 50, { maxWidth: 182 });
+        doc.setFont("helvetica", "bold"); doc.text(`Responsável: ${responsavel}`, 14, 67);
 
         doc.autoTable({
-            startY: 45, head: [['Matrícula', 'Nome', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atest.', 'Recesso']],
-            body: dadosPDF, styles: { fontSize: 7.5 },
-            didDrawPage: (d) => {
-                doc.setFontSize(7);
-                doc.text("Documento gerado para fins de controle interno - DGP/CMC", 14, 285);
+            startY: 74, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', halign: 'center' },
+            head: [['Matrícula', 'Nome', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atest.', 'Recesso']], body: dadosPDF,
+            styles: { fontSize: 7.5, halign: 'center' }, margin: { bottom: 25 },
+            didDrawPage: function() {
+                doc.setFontSize(7); doc.setFont("helvetica", "normal");
+                doc.text("Os Gabinetes Parlamentares devem enviar à Diretoria de Gestão de Pessoas (DGEP) da CMC o formulário de frequência dos estagiários relativo ao mês anterior.", 14, 282, { maxWidth: 182 });
             }
         });
 
-        doc.save(`Frequencia_Estagiario_${lotacao}_${mes}_${ano}.pdf`);
-        
+        let finalY = doc.lastAutoTable.finalY + 15;
+        if (finalY + 50 > 275) { doc.addPage(); finalY = 30; }
+        const dataAgora = new Date();
+        doc.setFontSize(10); doc.setFont("helvetica", "normal");
+        doc.text(`Data: ${dataAgora.toLocaleDateString('pt-BR')}`, 14, finalY);
+        doc.text("____________________________________________________", 105, finalY + 25, { align: 'center' });
+        doc.text("Assinatura do Responsável", 105, finalY + 30, { align: 'center' });
+        doc.setFont("helvetica", "bold"); doc.text(responsavel, 105, finalY + 35, { align: 'center' });
+        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
+        doc.text(`Documento gerado por: ${email}`, 105, finalY + 41, { align: 'center' });
+        doc.text(`Data e Hora da geração: ${dataAgora.toLocaleDateString('pt-BR')} às ${dataAgora.toLocaleTimeString('pt-BR')}`, 105, finalY + 45, { align: 'center' });
+
+        // Numeração de Páginas
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+            doc.text(`Página ${i} de ${totalPages}`, 196, 16, { align: 'right' });
+        }
+
+        doc.save(`Frequencia_Estagiarios_${lotacao.replace(/\s+/g, '_')}_${mesNum}_${ano}.pdf`);
         setTimeout(() => {
             window.open(LINK_FORMS_ENVIO, "_blank");
-            alert("✅ Dados enviados com sucesso! Relatório baixado. Anexe o arquivo na aba aberta.");
+            alert("✅ Dados enviados com sucesso! Relatório PDF baixado. Anexe o arquivo na aba que acabou de se abrir.");
         }, 800);
     });
 </script>
-
 </body>
 </html>
