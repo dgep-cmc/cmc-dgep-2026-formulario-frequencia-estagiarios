@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frequência Estagiários - CMC</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { border: none; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .logo-camara { max-height: 80px; object-fit: contain; }
+        
+        .input-text { text-align: center; font-size: 0.85rem; transition: all 0.2s; }
+        .input-text:disabled { background-color: #e9ecef; border-color: transparent; }
+        
+        /* Larguras das colunas */
+        .col-check { min-width: 40px; }
+        .col-mat { min-width: 90px; }
+        .col-lotacao { min-width: 140px; }
+        .col-presenca { min-width: 120px; }
+        .col-periodo { min-width: 120px; }
+        .col-controle { min-width: 130px; }
+        
+        .form-check-input { cursor: pointer; transform: scale(1.2); }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid mt-4 mb-5 px-4">
+    <div class="card p-4 p-md-5">
+        
+        <div class="text-center border-bottom mb-4 pb-4">
+            <img id="imgLogo" src="logo_cmc.png" alt="Logo CMC" class="logo-camara mb-3" onerror="this.style.display='none';">
+            <h2 class="text-primary fw-bold mb-2">Formulário de Frequência</h2>
+            
+            <div class="mb-4">
+                <span class="badge bg-primary px-4 py-2 fs-5 rounded-pill shadow-sm">Estagiários</span>
+            </div>
+            
+            <div id="statusConexao" class="badge bg-secondary p-2">Aguardando inicialização...</div>
+        </div>
+
+        <div id="areaFallback" class="alert alert-warning d-none mb-4 shadow-sm">
+            <h6 class="fw-bold">⚠️ A conexão automática foi bloqueada pelo navegador ou rede.</h6>
+            <p class="mb-2 small">Para continuar, baixe a planilha do Google como CSV e faça o upload abaixo:</p>
+            <input type="file" id="inputArquivoCSV" accept=".csv" class="form-control form-control-sm w-50">
+        </div>
+
+        <div class="row mb-4 bg-light p-3 border rounded mx-0">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">1. Responsável (Vereador/Diretor):</label>
+                <input class="form-control border-primary" list="listaResponsaveisDatalist" id="selectResponsavel" placeholder="Aguarde o carregamento..." disabled>
+                <datalist id="listaResponsaveisDatalist"></datalist>
+            </div>
+            <div class="col-md-5 mt-3 mt-md-0">
+                <label class="form-label fw-bold">2. E-mail institucional do Responsável:</label>
+                <input type="email" id="inputEmail" class="form-control border-primary" placeholder="exemplo@cmc.pr.gov.br">
+            </div>
+            <div class="col-md-3 mt-3 mt-md-0">
+                <label class="form-label fw-bold">3. Mês/Ano:</label>
+                <input type="month" id="inputMesAno" class="form-control border-primary">
+            </div>
+        </div>
+
+        <div id="areaTabela" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-3 bg-white p-3 border rounded">
+                <h5 class="mb-0 text-secondary">Responsável: <span id="spanResponsavel" class="text-primary fw-bold"></span></h5>
+            </div>
+            
+            <div class="table-responsive border rounded shadow-sm">
+                <table class="table table-hover align-middle bg-white mb-0 text-center">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="col-check align-middle">
+                                <input class="form-check-input border-secondary" type="checkbox" id="checkAll" checked onclick="toggleAllChecks(this)" title="Marcar/Desmarcar Todos">
+                            </th>
+                            <th class="text-start col-mat">Matrícula</th>
+                            <th class="text-start">Nome do Estagiário</th>
+                            <th class="text-start col-lotacao">Lotação</th>
+                            <th class="col-periodo">Período</th>
+                            <th class="col-presenca">Presença</th>
+                            <th class="col-controle">Faltas</th>
+                            <th class="col-controle">Atestados</th>
+                            <th class="col-controle">Recesso</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaBody">
+                        </tbody>
+                </table>
+            </div>
+
+            <div class="mt-4 border-top pt-4 text-center">
+                <h6 class="text-muted fw-bold mb-3">FINALIZAÇÃO</h6>
+                
+                <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">
+                    📄 Gerar Relatório e Ir para o Envio
+                </button>
+                <p class="small text-muted">O sistema fará o download do arquivo e abrirá a tela de anexo automaticamente.</p>
+
+                <div class="text-start mt-4">
+                    <button id="btnLimpar" class="btn btn-outline-secondary btn-sm fw-bold">🔄 Limpar Tela</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // LINKS ATUALIZADOS
+    const LINK_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRnZTxK2HHvmg9JNSwx8asM__Wh_uiT2jaiZO625oe06gdf-VMiaLVDkjqggf8pbmtriOZFkrKIMDb1/pub?gid=0&single=true&output=csv";
+    const URL_APPSCRIPT_SALVAR = "https://script.google.com/macros/s/AKfycbxTrJTDaN41cDfliF7ZQ4drc2VWQEz1-GRdYFbm3YaDwqRbrN22AwmKM_uEnrJuNIgrcQ/exec";
+    const LINK_FORMS_ENVIO = "https://docs.google.com/forms/d/e/1FAIpQLScGy83OEf2D1ipQMSFKWNIKeXtMbSXQ-S5AqMEgBFcUVbDRbA/viewform";
+
+    let baseGeral = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const data = new Date();
+        let mes = data.getMonth(); 
+        let ano = data.getFullYear();
+        if (mes === 0) { mes = 12; ano = ano - 1; }
+        
+        document.getElementById("inputMesAno").value = `${ano}-${String(mes).padStart(2, '0')}`;
+        tentaConectarPlanilha();
+    });
+
+    function buscarValorInteligente(objServidor, termosBusca) {
+        const chaves = Object.keys(objServidor);
+        for (let chave of chaves) {
+            const chaveLimpa = chave.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            for (let termo of termosBusca) {
+                if (chaveLimpa.includes(termo)) {
+                    return objServidor[chave] || "";
+                }
+            }
+        }
+        return "";
+    }
+
+    function tentaConectarPlanilha() {
+        const status = document.getElementById("statusConexao");
+        status.className = "badge bg-info p-2";
+        status.innerHTML = "Conectando ao Google Sheets...";
+
+        Papa.parse(LINK_CSV + "&t=" + new Date().getTime(), {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            transformHeader: function(h) { return h.trim(); }, 
+            complete: function(results) {
+                if (results.data && results.data.length > 0) {
+                    processarDados(results.data);
+                    status.className = "badge bg-success p-2";
+                    status.innerHTML = "✓ Base carregada automaticamente";
+                    setTimeout(() => { status.style.visibility = 'hidden'; }, 3000);
+                } else {
+                    falhaConexao();
+                }
+            },
+            error: function() { falhaConexao(); }
+        });
+    }
+
+    function falhaConexao() {
+        const status = document.getElementById("statusConexao");
+        status.className = "badge bg-danger p-2";
+        status.innerHTML = "⚠ Conexão automática falhou";
+        const inputResponsavel = document.getElementById("selectResponsavel");
+        inputResponsavel.placeholder = "Use a opção de upload abaixo.";
+        document.getElementById("areaFallback").classList.remove("d-none");
+    }
+
+    document.getElementById("inputArquivoCSV").addEventListener("change", function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            transformHeader: function(h) { return h.trim(); },
+            complete: function(results) {
+                processarDados(results.data);
+                document.getElementById("statusConexao").className = "badge bg-success p-2";
+                document.getElementById("statusConexao").innerHTML = "✓ Base carregada por arquivo";
+                document.getElementById("areaFallback").classList.add("d-none");
+            }
+        });
+    });
+
+    function processarDados(dados) {
+        baseGeral = dados;
+        const listaResponsaveis = [...new Set(baseGeral.map(item => buscarValorInteligente(item, ["vereador", "responsavel"])))].filter(Boolean).sort();
+        const datalist = document.getElementById("listaResponsaveisDatalist");
+        datalist.innerHTML = ''; 
+        listaResponsaveis.forEach(resp => { datalist.innerHTML += `<option value="${resp}">`; });
+        const inputResponsavel = document.getElementById("selectResponsavel");
+        inputResponsavel.disabled = false;
+        inputResponsavel.placeholder = "Digite para pesquisar...";
+    }
+
+    document.getElementById("selectResponsavel").addEventListener("change", (e) => {
+        const responsavelSelecionado = e.target.value;
+        const tbody = document.getElementById("tabelaBody");
+        tbody.innerHTML = "";
+        document.getElementById("checkAll").checked = true;
+
+        if (!responsavelSelecionado) {
+            document.getElementById("areaTabela").classList.add("d-none");
+            return;
+        }
+
+        const servidores = baseGeral.filter(s => buscarValorInteligente(s, ["vereador", "responsavel"]) === responsavelSelecionado);
+        
+        if (servidores.length > 0) {
+            document.getElementById("spanResponsavel").textContent = responsavelSelecionado;
+            servidores.forEach((servidor, i) => {
+                const matricula = buscarValorInteligente(servidor, ["matricula"]);
+                const nome = buscarValorInteligente(servidor, ["nome"]);
+                const lotacaoServidor = buscarValorInteligente(servidor, ["lotacao"]);
+                const periodoFrequencia = buscarValorInteligente(servidor, ["periodo"]);
+                const diasFerias = buscarValorInteligente(servidor, ["recesso", "ferias"]);
+                const diasFaltas = buscarValorInteligente(servidor, ["falta"]);
+                const diasAtestados = buscarValorInteligente(servidor, ["atestado", "afastamento"]);
+                const presencaParcial = (diasFerias.trim() !== "" || diasFaltas.trim() !== "" || diasAtestados.trim() !== "");
+                const disabledAttr = presencaParcial ? "" : "disabled";
+                const placeholderNormal = presencaParcial ? "Datas..." : "-";
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="align-middle"><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked onclick="verificarChecksIndividuais()"></td>
+                        <td class="text-secondary fw-bold text-start">${matricula}</td>
+                        <td class="text-dark text-start">${nome}</td>
+                        <td class="text-muted text-start small">${lotacaoServidor}</td>
+                        <td><input type="text" class="form-control form-control-sm input-text border-secondary mx-auto w-100" id="periodo-${i}" value="${periodoFrequencia}" placeholder="Ex: 01 a 31"></td>
+                        <td>
+                            <select class="form-select form-select-sm border-secondary w-100" id="presenca-${i}" onchange="toggleCamposJustificativa(${i})">
+                                <option value="integral" ${!presencaParcial ? "selected" : ""}>Integral</option>
+                                <option value="parcial" ${presencaParcial ? "selected" : ""}>Parcial</option>
+                            </select>
+                        </td>
+                        <td><input type="text" class="form-control form-control-sm input-text border-secondary mx-auto w-100" id="faltas-${i}" value="${diasFaltas}" placeholder="${placeholderNormal}" ${disabledAttr}></td>
+                        <td><input type="text" class="form-control form-control-sm input-text border-secondary mx-auto w-100" id="atestados-${i}" value="${diasAtestados}" placeholder="${placeholderNormal}" ${disabledAttr}></td>
+                        <td><input type="text" class="form-control form-control-sm input-text border-secondary mx-auto w-100" id="ferias-${i}" value="${diasFerias}" placeholder="${placeholderNormal}" ${disabledAttr}></td>
+                    </tr>
+                `;
+            });
+            document.getElementById("areaTabela").classList.remove("d-none");
+        }
+    });
+
+    window.toggleAllChecks = function(source) {
+        const checkboxes = document.querySelectorAll('.check-servidor');
+        checkboxes.forEach(chk => chk.checked = source.checked);
+    }
+    
+    window.verificarChecksIndividuais = function() {
+        const checkboxes = document.querySelectorAll('.check-servidor');
+        const allChecked = Array.from(checkboxes).every(chk => chk.checked);
+        document.getElementById("checkAll").checked = allChecked;
+    }
+
+    window.toggleCamposJustificativa = function(i) {
+        const presenca = document.getElementById(`presenca-${i}`).value;
+        const faltas = document.getElementById(`faltas-${i}`);
+        const atestados = document.getElementById(`atestados-${i}`);
+        const ferias = document.getElementById(`ferias-${i}`);
+
+        if (presenca === "integral") {
+            faltas.disabled = true; faltas.value = ""; faltas.placeholder = "-";
+            atestados.disabled = true; atestados.value = ""; atestados.placeholder = "-";
+            ferias.disabled = true; ferias.value = ""; ferias.placeholder = "-";
+        } else {
+            faltas.disabled = false; faltas.placeholder = "Datas...";
+            atestados.disabled = false; atestados.placeholder = "Datas...";
+            ferias.disabled = false; ferias.placeholder = "Datas...";
+        }
+    }
+
+    document.getElementById("btnLimpar").addEventListener("click", () => {
+        document.getElementById("selectResponsavel").value = "";
+        document.getElementById("inputEmail").value = "";
+        document.getElementById("areaTabela").classList.add("d-none");
+    });
+
+    document.getElementById("btnGerarPDF").addEventListener("click", () => {
+        const mesAno = document.getElementById("inputMesAno").value;
+        if(!mesAno) return alert("Selecione o Mês/Ano.");
+        
+        const responsavel = document.getElementById("spanResponsavel").textContent;
+        const emailResponsavel = document.getElementById("inputEmail").value.trim();
+
+        if(!emailResponsavel) return alert("Por favor, preencha o E-mail institucional do Responsável.");
+        if(!emailResponsavel.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("⚠️ E-mail inválido! Utilize '@cmc.pr.gov.br'.");
+
+        const registrosParaSalvar = [];
+        const dadosPDF = [];
+        const linhasTabelaHTML = document.querySelectorAll("#tabelaBody tr");
+
+        linhasTabelaHTML.forEach((tr, i) => {
+            const checkbox = document.getElementById(`check-${i}`);
+            if (checkbox && checkbox.checked) {
+                const mat = tr.cells[1].innerText;
+                const nome = tr.cells[2].innerText;
+                const lotacaoDaLinha = tr.cells[3].innerText; 
+                const periodo = document.getElementById(`periodo-${i}`).value || "-";
+                const presenca = document.getElementById(`presenca-${i}`).value.toUpperCase(); 
+                const faltas = document.getElementById(`faltas-${i}`).value || "-"; 
+                const atestados = document.getElementById(`atestados-${i}`).value || "-"; 
+                const ferias = document.getElementById(`ferias-${i}`).value || "-"; 
+                
+                registrosParaSalvar.push([mat, nome, lotacaoDaLinha, periodo, presenca, faltas, atestados, ferias]);
+                dadosPDF.push([mat, nome, lotacaoDaLinha, periodo, presenca, faltas, atestados, ferias]);
+            }
+        });
+
+        if (dadosPDF.length === 0) return alert("⚠️ Selecione pelo menos um estagiário.");
+
+        const btn = document.getElementById("btnGerarPDF");
+        const textoOriginal = btn.innerHTML;
+        btn.innerHTML = "⏳ Processando...";
+        btn.disabled = true;
+
+        // 1. SALVAR NO SHEETS
+        fetch(URL_APPSCRIPT_SALVAR, {
+            method: "POST",
+            mode: "no-cors", 
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ mesAno: mesAno, vereador: responsavel, registros: registrosParaSalvar })
+        }).catch(erro => console.error("Erro ao salvar:", erro));
+
+        // 2. GERAÇÃO DO PDF 
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const [ano, mes] = mesAno.split('-');
+        const mesesNome = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+        const nomeMes = mesesNome[parseInt(mes) - 1].toLowerCase(); 
+
+        function drawFooter() {
+            doc.setFontSize(7); doc.setFont("helvetica", "normal");
+            const rodapeLegal = `Os Gabinetes Parlamentares devem enviar à Diretoria de Gestão de Pessoas (DGEP) da Câmara Municipal de Curitiba o formulário de controle de frequência dos estagiários relativo ao mês anterior.`;
+            doc.text(rodapeLegal, 14, 282, { maxWidth: 182, align: 'justify' });
+        }
+
+        let logoWidth = 35;
+        let logoHeight = 15; 
+        try {
+            const img = document.getElementById("imgLogo");
+            if (img.complete && img.naturalHeight !== 0) {
+                const ratio = img.naturalWidth / img.naturalHeight;
+                logoHeight = logoWidth / ratio;
+                doc.addImage(img, 'PNG', 14, 12, logoWidth, logoHeight);
+            }
+        } catch(e) { }
+
+        const posXBarra = 14 + logoWidth + 5; 
+        doc.setLineWidth(0.5); doc.setDrawColor(180, 180, 180); 
+        doc.line(posXBarra, 12, posXBarra, 12 + 15);
+
+        doc.setTextColor(0, 0, 0); doc.setFontSize(11); doc.setFont("helvetica", "bold");
+        doc.text("FORMULÁRIO DE FREQUÊNCIA DE ESTAGIÁRIOS", posXBarra + 5, 12 + 6);
+        
+        doc.setFontSize(10); doc.setFont("helvetica", "normal");
+        doc.text("À Diretoria de Gestão de Pessoas (DGEP),", 14, 43);
+        doc.text(`Informamos o controle de frequência dos estagiários vinculados a este gabinete/lotação, referente ao mês de ${nomeMes} de ${ano}.`, 14, 50, { maxWidth: 182 });
+        doc.setFont("helvetica", "bold"); doc.text(`Responsável: ${responsavel}`, 14, 67);
+
+        doc.autoTable({ 
+            startY: 74, theme: 'grid', 
+            headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', halign: 'center' }, 
+            head: [['Matrícula', 'Nome do Estagiário', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atestados', 'Recesso']], 
+            body: dadosPDF,
+            styles: { fontSize: 7.5, halign: 'center' }, 
+            margin: { bottom: 25 }, 
+            didDrawPage: function () { drawFooter(); }
+        });
+
+        let finalY = doc.lastAutoTable.finalY + 15;
+        const dataAgora = new Date();
+        const dataFormatada = dataAgora.toLocaleDateString('pt-BR');
+        const horaFormatada = dataAgora.toLocaleTimeString('pt-BR');
+
+        doc.setFontSize(10); doc.setFont("helvetica", "normal");
+        doc.text(`Data: ${dataFormatada}`, 14, finalY);
+        doc.text("____________________________________________________", 105, finalY + 15, { align: 'center' });
+        doc.text("Assinatura do Responsável", 105, finalY + 20, { align: 'center' });
+        doc.setFont("helvetica", "bold"); doc.text(responsavel, 105, finalY + 25, { align: 'center' });
+        
+        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
+        doc.text(`Documento gerado por: ${emailResponsavel}`, 105, finalY + 31, { align: 'center' });
+        doc.text(`Data e Hora da geração: ${dataFormatada} às ${horaFormatada}`, 105, finalY + 35, { align: 'center' });
+
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.text(`Página ${i} de ${totalPages}`, 196, 16, { align: 'right' }); 
+        }
+
+        doc.save(`Frequencia_Estagiarios_${responsavel.replace(/\s+/g, '_')}_${ano}_${mes}.pdf`);
+
+        setTimeout(() => {
+            window.open(LINK_FORMS_ENVIO, "_blank");
+            btn.innerHTML = textoOriginal;
+            btn.disabled = false;
+            alert("✅ Dados enviados com sucesso! Relatório PDF baixado.\n\nAnexe o arquivo na aba que acabou de se abrir.");
+        }, 800);
+    });
+</script>
+
+</body>
+</html>
