@@ -100,8 +100,10 @@
 
 <script>
     const LINK_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRnZTxK2HHvmg9JNSwx8asM__Wh_uiT2jaiZO625oe06gdf-VMiaLVDkjqggf8pbmtriOZFkrKIMDb1/pub?gid=0&single=true&output=csv";
-    // Link do AppScript atualizado conforme solicitado:
-    const URL_APPSCRIPT_SALVAR = "https://script.google.com/macros/s/AKfycbz00oVGWZ9L15LhTQw2_wr6DoVoQb6RAtytvkAeMzsh-j2JXixHvtypgSTcEla5uFMFSg/exec";
+    
+    // LINK DO APPSCRIPT ATUALIZADO AQUI
+    const URL_APPSCRIPT_SALVAR = "https://script.google.com/macros/s/AKfycbxSmfw0IlBVVMqiaDR5ijR5ioKY4dyHDOvDAOUT0_oBtaWlYGvvDUTBU5ZyiUUYh5NYeQ/exec";
+    
     const LINK_FORMS_ENVIO = "https://docs.google.com/forms/d/e/1FAIpQLScGy83OEf2D1ipQMSFKWNIKeXtMbSXQ-S5AqMEgBFcUVbDRbA/viewform";
 
     let baseGeral = [];
@@ -251,7 +253,10 @@
                     document.getElementById(`linha-${i}`).classList.remove("is-invalid-row");
                 }
 
-                registrosExportar.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
+                registrosExportar.push([
+                    dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"
+                ]);
+
                 dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
             }
         });
@@ -262,7 +267,12 @@
         const btn = document.getElementById("btnGerarPDF");
         const textoOriginal = btn.innerHTML; btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
 
-        fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosExportar }) });
+        // Requisição para o Sheets contendo exatamente a montagem que configuramos
+        fetch(URL_APPSCRIPT_SALVAR, { 
+            method: "POST", 
+            mode: "no-cors", 
+            body: JSON.stringify({ registros: registrosExportar }) 
+        });
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
