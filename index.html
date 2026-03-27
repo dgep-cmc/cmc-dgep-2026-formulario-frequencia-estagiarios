@@ -15,18 +15,16 @@
         body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .card { border: none; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         .logo-camara { max-height: 80px; object-fit: contain; }
-        
         .input-text { text-align: center; font-size: 0.85rem; transition: all 0.2s; }
         .input-text:disabled { background-color: #e9ecef; border-color: transparent; }
-        
         .col-check { min-width: 40px; }
         .col-mat { min-width: 90px; }
         .col-lotacao { min-width: 140px; }
         .col-presenca { min-width: 120px; }
         .col-periodo { min-width: 120px; }
         .col-controle { min-width: 130px; }
-        
         .form-check-input { cursor: pointer; transform: scale(1.2); }
+        .is-invalid-row { background-color: #fff3f3 !important; border: 1px solid #dc3545 !important; }
     </style>
 </head>
 <body>
@@ -37,17 +35,14 @@
         <div class="text-center border-bottom mb-4 pb-4">
             <img id="imgLogo" src="logo_cmc.png" alt="Logo CMC" class="logo-camara mb-3" onerror="this.style.display='none';">
             <h2 class="text-primary fw-bold mb-2">Formulário de Frequência</h2>
-            
             <div class="mb-4">
                 <span class="badge bg-primary px-4 py-2 fs-5 rounded-pill shadow-sm">Estagiários</span>
             </div>
-            
             <div id="statusConexao" class="badge bg-secondary p-2">Aguardando inicialização...</div>
         </div>
 
         <div id="areaFallback" class="alert alert-warning d-none mb-4 shadow-sm">
-            <h6 class="fw-bold">⚠️ A conexão automática foi bloqueada.</h6>
-            <p class="mb-2 small">Baixe a planilha como CSV e faça o upload abaixo:</p>
+            <h6 class="fw-bold">⚠️ Conexão automática falhou.</h6>
             <input type="file" id="inputArquivoCSV" accept=".csv" class="form-control form-control-sm w-50">
         </div>
 
@@ -105,7 +100,6 @@
                 <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">
                     📄 Gerar Relatório e Ir para o Envio
                 </button>
-                <p class="small text-muted">O sistema fará o download do arquivo e abrirá a tela de anexo automaticamente.</p>
                 <div class="text-start mt-4">
                     <button id="btnLimpar" class="btn btn-outline-secondary btn-sm fw-bold">🔄 Limpar Tela</button>
                 </div>
@@ -168,8 +162,7 @@
         const lotSelected = e.target.value;
         const respInput = document.getElementById("selectResponsavel");
         const respDatalist = document.getElementById("listaResponsaveisDatalist");
-        respDatalist.innerHTML = "";
-        respInput.value = "";
+        respDatalist.innerHTML = ""; respInput.value = "";
         document.getElementById("areaTabela").classList.add("d-none");
         if (!lotSelected) return;
         const estagiariosLotacao = baseGeral.filter(s => buscarValorInteligente(s, ["lotacao"]) === lotSelected);
@@ -193,7 +186,7 @@
             const ate = buscarValorInteligente(servidor, ["atestado"]);
             const parcial = (rec.trim() !== "" || fal.trim() !== "" || ate.trim() !== "");
             tbody.innerHTML += `
-                <tr>
+                <tr id="linha-${i}">
                     <td><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked></td>
                     <td class="text-secondary fw-bold text-start">${mat}</td>
                     <td class="text-dark text-start">${nome}</td>
@@ -204,7 +197,7 @@
                     </select></td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="faltas-${i}" value="${fal}" ${parcial ? '' : 'disabled'}></td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="atestados-${i}" value="${ate}" ${parcial ? '' : 'disabled'}></td>
-                    <td><input type="text" class="form-control form-control-sm input-text" id="ferias-${i}" value="${rec}" ${parcial ? '' : 'disabled'}></td>
+                    <td><input type="text" class="form-control form-control-sm input-text" id="recesso-${i}" value="${rec}" ${parcial ? '' : 'disabled'}></td>
                 </tr>`;
         });
         document.getElementById("areaTabela").classList.remove("d-none");
@@ -212,38 +205,59 @@
 
     window.toggleCamposJustificativa = function(i) {
         const p = document.getElementById(`presenca-${i}`).value === "integral";
-        [`faltas-${i}`, `atestados-${i}`, `ferias-${i}`].forEach(id => {
+        [`faltas-${i}`, `atestados-${i}`, `recesso-${i}`].forEach(id => {
             const el = document.getElementById(id);
             el.disabled = p; if(p) el.value = "";
         });
     }
 
     window.toggleAllChecks = (s) => document.querySelectorAll('.check-servidor').forEach(c => c.checked = s.checked);
-    document.getElementById("btnLimpar").addEventListener("click", () => location.reload());
 
     document.getElementById("btnGerarPDF").addEventListener("click", () => {
         const mesAno = document.getElementById("inputMesAno").value;
         const responsavel = document.getElementById("selectResponsavel").value;
         const email = document.getElementById("inputEmail").value.trim();
         const lotacao = document.getElementById("spanLotacao").textContent;
+        
         if(!mesAno || !responsavel || !email.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("Preencha todos os campos corretamente!");
 
-        const dadosPDF = [];
+        const registrosExportar = [];
+        let erroJustificativa = false;
+
         document.querySelectorAll("#tabelaBody tr").forEach((tr, i) => {
             if (document.getElementById(`check-${i}`).checked) {
-                dadosPDF.push([
-                    tr.cells[1].innerText, tr.cells[2].innerText, lotacao,
-                    document.getElementById(`periodo-${i}`).value,
-                    document.getElementById(`presenca-${i}`).value.toUpperCase(),
-                    document.getElementById(`faltas-${i}`).value || "-",
-                    document.getElementById(`atestados-${i}`).value || "-",
-                    document.getElementById(`ferias-${i}`).value || "-"
-                ]);
+                const mat = tr.cells[1].innerText;
+                const nome = tr.cells[2].innerText;
+                const periodo = document.getElementById(`periodo-${i}`).value;
+                const presenca = document.getElementById(`presenca-${i}`).value.toUpperCase();
+                const faltas = document.getElementById(`faltas-${i}`).value.trim();
+                const atestados = document.getElementById(`atestados-${i}`).value.trim();
+                const recesso = document.getElementById(`recesso-${i}`).value.trim();
+
+                if (presenca === "PARCIAL" && faltas === "" && atestados === "" && recesso === "") {
+                    erroJustificativa = true;
+                    document.getElementById(`linha-${i}`).classList.add("is-invalid-row");
+                } else {
+                    document.getElementById(`linha-${i}`).classList.remove("is-invalid-row");
+                }
+
+                // ORDENAÇÃO EXATA PARA A PLANILHA: Matrícula, Nome, Lotação, Período, Presença, Faltas, Atestados, Recesso
+                registrosExportar.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
             }
         });
 
-        // Envio para o Sheets
-        fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ mesAno, vereador: responsavel, registros: dadosPDF }) });
+        if (erroJustificativa) return alert("⚠️ Preencha a justificativa para presença PARCIAL.");
+        if (registrosExportar.length === 0) return alert("⚠️ Selecione ao menos um estagiário.");
+
+        const btn = document.getElementById("btnGerarPDF");
+        const textoOriginal = btn.innerHTML;
+        btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
+
+        fetch(URL_APPSCRIPT_SALVAR, { 
+            method: "POST", 
+            mode: "no-cors", 
+            body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosExportar }) 
+        });
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
@@ -251,59 +265,46 @@
         const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
         const nomeMes = meses[parseInt(mesNum) - 1].toLowerCase();
 
-        // --- INÍCIO DO PADRÃO VISUAL INSTITUCIONAL ---
-        let logoWidth = 35; let logoHeight = 15;
+        // Cabeçalho PDF
         try {
             const img = document.getElementById("imgLogo");
             if (img.complete && img.naturalHeight !== 0) {
-                const ratio = img.naturalWidth / img.naturalHeight;
-                logoHeight = logoWidth / ratio;
-                doc.addImage(img, 'PNG', 14, 12, logoWidth, logoHeight);
+                doc.addImage(img, 'PNG', 14, 12, 35, 15);
             }
         } catch(e) {}
-        const posXBarra = 14 + logoWidth + 5;
-        doc.setLineWidth(0.5); doc.setDrawColor(180, 180, 180);
-        doc.line(posXBarra, 12, posXBarra, 12 + Math.max(logoHeight, 14));
-        doc.setTextColor(0, 0, 0); doc.setFontSize(11); doc.setFont("helvetica", "bold");
-        doc.text("FORMULÁRIO DE FREQUÊNCIA DE ESTAGIÁRIOS", posXBarra + 5, 12 + 6);
+        doc.setLineWidth(0.5); doc.setDrawColor(180, 180, 180); doc.line(54, 12, 54, 27);
+        doc.setTextColor(0,0,0); doc.setFontSize(11); doc.setFont("helvetica", "bold");
+        doc.text("FORMULÁRIO DE FREQUÊNCIA DE ESTAGIÁRIOS", 59, 18);
         doc.setFontSize(10); doc.setFont("helvetica", "normal");
-        doc.text("À Diretoria de Gestão de Pessoas (DGEP),", 14, 43);
-        doc.text(`Informamos o controle de frequência dos estagiários vinculados a este gabinete/lotação, referente ao mês de ${nomeMes} de ${ano}.`, 14, 50, { maxWidth: 182 });
-        doc.setFont("helvetica", "bold"); doc.text(`Responsável: ${responsavel}`, 14, 67);
+        doc.text(`À DGEP, informamos a frequência de ${nomeMes}/${ano}.`, 14, 45);
+        doc.setFont("helvetica", "bold"); doc.text(`Responsável: ${responsavel}`, 14, 60);
 
         doc.autoTable({
-            startY: 74, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', halign: 'center' },
-            head: [['Matrícula', 'Nome', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atest.', 'Recesso']], body: dadosPDF,
-            styles: { fontSize: 7.5, halign: 'center' }, margin: { bottom: 25 },
+            startY: 65, theme: 'grid', 
+            head: [['Matrícula', 'Nome', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atest.', 'Recesso']],
+            body: registrosExportar,
+            styles: { fontSize: 7.5, halign: 'center' },
             didDrawPage: function() {
-                doc.setFontSize(7); doc.setFont("helvetica", "normal");
-                doc.text("Os Gabinetes Parlamentares devem enviar à Diretoria de Gestão de Pessoas (DGEP) da CMC o formulário de frequência dos estagiários relativo ao mês anterior.", 14, 282, { maxWidth: 182 });
+                doc.setFontSize(7); doc.text("Frequência mensal de estagiários - CMC.", 14, 285);
+                const totalPages = doc.internal.getNumberOfPages();
+                doc.text(`Página ${doc.internal.getCurrentPageInfo().pageNumber} de ${totalPages}`, 196, 16, { align: 'right' });
             }
         });
 
         let finalY = doc.lastAutoTable.finalY + 15;
-        if (finalY + 50 > 275) { doc.addPage(); finalY = 30; }
         const dataAgora = new Date();
         doc.setFontSize(10); doc.setFont("helvetica", "normal");
         doc.text(`Data: ${dataAgora.toLocaleDateString('pt-BR')}`, 14, finalY);
-        doc.text("____________________________________________________", 105, finalY + 25, { align: 'center' });
-        doc.text("Assinatura do Responsável", 105, finalY + 30, { align: 'center' });
-        doc.setFont("helvetica", "bold"); doc.text(responsavel, 105, finalY + 35, { align: 'center' });
-        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
-        doc.text(`Documento gerado por: ${email}`, 105, finalY + 41, { align: 'center' });
-        doc.text(`Data e Hora da geração: ${dataAgora.toLocaleDateString('pt-BR')} às ${dataAgora.toLocaleTimeString('pt-BR')}`, 105, finalY + 45, { align: 'center' });
-
-        // Numeração de Páginas
-        const totalPages = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i++) {
-            doc.setPage(i); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
-            doc.text(`Página ${i} de ${totalPages}`, 196, 16, { align: 'right' });
-        }
+        doc.text("__________________________________", 105, finalY + 20, { align: 'center' });
+        doc.text("Assinatura do Responsável", 105, finalY + 25, { align: 'center' });
+        doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+        doc.text(`Gerado por: ${email} em ${dataAgora.toLocaleString('pt-BR')}`, 105, finalY + 35, { align: 'center' });
 
         doc.save(`Frequencia_Estagiarios_${lotacao.replace(/\s+/g, '_')}_${mesNum}_${ano}.pdf`);
         setTimeout(() => {
             window.open(LINK_FORMS_ENVIO, "_blank");
-            alert("✅ Dados enviados com sucesso! Relatório PDF baixado. Anexe o arquivo na aba que acabou de se abrir.");
+            btn.innerHTML = textoOriginal; btn.disabled = false;
+            alert("✅ Dados enviados e PDF baixado!");
         }, 800);
     });
 </script>
