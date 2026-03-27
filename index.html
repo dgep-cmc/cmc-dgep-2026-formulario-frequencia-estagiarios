@@ -79,7 +79,7 @@
                             <th class="col-periodo">Período</th>
                             <th class="col-presenca">Presença</th>
                             <th class="col-controle">Faltas</th>
-                            <th class="col-controle">Atestados/Afast.</th>
+                            <th class="col-controle">Atestados/<br>Afastamentos</th>
                             <th class="col-controle">Recesso</th>
                         </tr>
                     </thead>
@@ -175,7 +175,7 @@
             const ate = buscarValorInteligente(servidor, ["atestados", "afastamentos"]);
             const rec = buscarValorInteligente(servidor, ["recesso"]);
             
-            // Salva no cache para recuperação posterior
+            // Salva no cache para recuperação posterior (Correção 1)
             cacheDadosOriginais[mat] = { fal, ate, rec };
 
             const parcial = (rec.trim() !== "" || fal.trim() !== "" || ate.trim() !== "");
@@ -210,7 +210,7 @@
             f.value = a.value = r.value = "";
         } else {
             f.disabled = a.disabled = r.disabled = false;
-            // Recupera do cache se estiver vazio
+            // Recupera do cache se mudar de volta para Parcial
             if(cacheDadosOriginais[mat]){
                 f.value = cacheDadosOriginais[mat].fal;
                 a.value = cacheDadosOriginais[mat].ate;
@@ -253,14 +253,13 @@
                     document.getElementById(`linha-${i}`).classList.remove("is-invalid-row");
                 }
 
-                // ORDEM EXATA CONFORME SOLICITADO PARA O GOOGLE SHEETS:
-                // Data; Mês/Ano; Responsável; Matrícula; Nome; Lotação; Período; Presença; Falta; Atestados; Recesso
+                // CORREÇÃO 2: ORDEM EXATA SEM DUPLICAR DADOS DO CABEÇALHO DO GOOGLE APPS SCRIPT
+                // Seu App Script já adiciona Data, MesAno e Responsavel. Por isso mandamos apenas as colunas específicas do estagiário!
                 registrosExportar.push([
-                    dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca,
-                    faltas || "-", atestados || "-", recesso || "-"
+                    mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"
                 ]);
 
-                // Dados reduzidos para a tabela visual do PDF
+                // PDF também recebe apenas os dados da tabela
                 dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
             }
         });
@@ -269,9 +268,9 @@
         if (registrosExportar.length === 0) return alert("⚠️ Selecione ao menos um estagiário.");
 
         const btn = document.getElementById("btnGerarPDF");
-        btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
+        const textoOriginal = btn.innerHTML; btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
 
-        // Envio para Sheets
+        // Envio para Sheets (O AppScript lá no Google vai cuidar de inserir mesAno e vereador na frente)
         fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosExportar }) });
 
         const { jsPDF } = window.jspdf;
@@ -280,7 +279,7 @@
         const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
         const nomeMes = meses[parseInt(mesNum) - 1].toLowerCase();
 
-        // Cabeçalho (Padrão Comissionados)
+        // Cabeçalho PDF
         try {
             const img = document.getElementById("imgLogo");
             if (img.complete && img.naturalHeight !== 0) doc.addImage(img, 'PNG', 14, 12, 35, 15);
@@ -310,7 +309,7 @@
         doc.text("____________________________________________________", 105, finalY + 20, { align: 'center' });
         doc.text("Assinatura do Responsável", 105, finalY + 25, { align: 'center' });
         doc.setFont("helvetica", "bold"); doc.text(responsavel, 105, finalY + 30, { align: 'center' });
-        doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
         doc.text(`Documento gerado por: ${email}`, 105, finalY + 36, { align: 'center' });
         doc.text(`Data e Hora da geração: ${dataReg} às ${dataAgora.toLocaleTimeString('pt-BR')}`, 105, finalY + 40, { align: 'center' });
 
@@ -322,11 +321,12 @@
 
         doc.save(`Frequencia_Estagiarios_${lotacao.replace(/\s+/g, '_')}_${mesNum}_${ano}.pdf`);
         
+        // CORREÇÃO 3: ABERTURA DO FORMS
         setTimeout(() => {
             const novaAba = window.open(LINK_FORMS_ENVIO, "_blank");
             if(novaAba) novaAba.focus();
             btn.innerHTML = "📄 Gerar Relatório e Ir para o Envio"; btn.disabled = false;
-            alert("✅ Dados enviados com sucesso! Relatório PDF baixado. Anexe o arquivo na aba que acabou de se abrir.\n\n(Se a aba não abriu, verifique se o seu navegador bloqueou o pop-up)");
+            alert("✅ Dados enviados com sucesso! Relatório PDF baixado. Anexe o arquivo na aba que acabou de se abrir.\n\n(Se a aba não abriu, verifique se o seu navegador bloqueou o pop-up, há um ícone na barra de endereços)");
         }, 1200);
     });
 </script>
