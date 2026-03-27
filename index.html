@@ -24,6 +24,7 @@
         .col-controle { min-width: 130px; }
         .form-check-input { cursor: pointer; transform: scale(1.2); }
         
+        /* Destaque visual de erros */
         .input-invalido {
             border-color: #dc3545 !important;
             background-color: #fff5f5 !important;
@@ -33,6 +34,7 @@
             background-color: #fff5f5 !important;
         }
 
+        /* Container de notificações flutuantes (Toasts) */
         #toast-container {
             position: fixed;
             top: 20px;
@@ -148,6 +150,7 @@
     let baseGeral = [];
     let cacheDadosOriginais = {}; 
 
+    // Função para exibir as notificações flutuantes
     function mostrarToast(mensagem, tipo = 'aviso') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
@@ -350,29 +353,20 @@
         return valido;
     }
 
-    // =========================================================================
-    // BOTÃO LIMPAR REFEITO: Limpa TUDO e reseta a página perfeitamente
-    // =========================================================================
     document.getElementById("btnLimpar").addEventListener("click", () => {
-        // 1. Limpa os campos superiores
         document.getElementById("selectLotacao").value = "";
         document.getElementById("selectResponsavel").value = "";
         document.getElementById("selectResponsavel").disabled = true;
         document.getElementById("inputEmail").value = "";
         
-        // 2. Reseta a Data para o padrão original
         configurarMesPadrao();
 
-        // 3. Esconde e limpa a tabela e área de erros
         document.getElementById("areaTabela").classList.add("d-none");
         document.getElementById("areaErros").classList.add("d-none");
         document.getElementById("tabelaBody").innerHTML = "";
         document.getElementById("listaErros").innerHTML = "";
 
-        // 4. Mostra uma notificação de sucesso
         mostrarToast("Tela limpa com sucesso!", "sucesso");
-
-        // 5. Rola a página de volta para o topo
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
@@ -405,7 +399,9 @@
                 const atestados = document.getElementById(`atestados-${i}`).value.trim() || "-";
                 const recesso = document.getElementById(`recesso-${i}`).value.trim() || "-";
 
-                registrosExportar.push([dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas, atestados, recesso]);
+                // Adicionado o email na última posição da array enviada para o Google Sheets
+                registrosExportar.push([dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas, atestados, recesso, email]);
+                
                 dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas, atestados, recesso]);
             }
         });
