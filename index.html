@@ -79,7 +79,7 @@
                             <th class="col-periodo">Período</th>
                             <th class="col-presenca">Presença</th>
                             <th class="col-controle">Faltas</th>
-                            <th class="col-controle">Atestados/<br>Afastamentos</th>
+                            <th class="col-controle">Atestados/Afast.</th>
                             <th class="col-controle">Recesso</th>
                         </tr>
                     </thead>
@@ -104,6 +104,7 @@
     const LINK_FORMS_ENVIO = "https://docs.google.com/forms/d/e/1FAIpQLScGy83OEf2D1ipQMSFKWNIKeXtMbSXQ-S5AqMEgBFcUVbDRbA/viewform";
 
     let baseGeral = [];
+    let cacheDadosOriginais = {}; // Memória para não perder dados ao alternar Presença
 
     window.addEventListener('DOMContentLoaded', () => {
         const data = new Date();
@@ -165,6 +166,7 @@
         const tbody = document.getElementById("tabelaBody");
         tbody.innerHTML = "";
         document.getElementById("spanLotacao").textContent = lotacao;
+        
         servidores.forEach((servidor, i) => {
             const mat = buscarValorInteligente(servidor, ["matricula"]);
             const nome = buscarValorInteligente(servidor, ["nome do estagiario", "nome"]);
@@ -172,12 +174,16 @@
             const fal = buscarValorInteligente(servidor, ["falta"]);
             const ate = buscarValorInteligente(servidor, ["atestados", "afastamentos"]);
             const rec = buscarValorInteligente(servidor, ["recesso"]);
+            
+            // Salva no cache para recuperação posterior
+            cacheDadosOriginais[mat] = { fal, ate, rec };
+
             const parcial = (rec.trim() !== "" || fal.trim() !== "" || ate.trim() !== "");
             
             tbody.innerHTML += `
                 <tr id="linha-${i}">
                     <td><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked></td>
-                    <td class="text-secondary fw-bold text-start">${mat}</td>
+                    <td class="text-secondary fw-bold text-start mat-valor">${mat}</td>
                     <td class="text-dark text-start">${nome}</td>
                     <td><input type="text" class="form-control form-control-sm input-text" id="periodo-${i}" value="${per}"></td>
                     <td><select class="form-select form-select-sm" id="presenca-${i}" onchange="toggleCamposJustificativa(${i})">
@@ -193,10 +199,24 @@
     }
 
     window.toggleCamposJustificativa = function(i) {
-        const p = document.getElementById(`presenca-${i}`).value === "integral";
-        [`faltas-${i}`, `atestados-${i}`, `recesso-${i}`].forEach(id => {
-            const el = document.getElementById(id); el.disabled = p; if(p) el.value = "";
-        });
+        const mat = document.querySelector(`#linha-${i} .mat-valor`).innerText;
+        const select = document.getElementById(`presenca-${i}`);
+        const f = document.getElementById(`faltas-${i}`);
+        const a = document.getElementById(`atestados-${i}`);
+        const r = document.getElementById(`recesso-${i}`);
+
+        if (select.value === "integral") {
+            f.disabled = a.disabled = r.disabled = true;
+            f.value = a.value = r.value = "";
+        } else {
+            f.disabled = a.disabled = r.disabled = false;
+            // Recupera do cache se estiver vazio
+            if(cacheDadosOriginais[mat]){
+                f.value = cacheDadosOriginais[mat].fal;
+                a.value = cacheDadosOriginais[mat].ate;
+                r.value = cacheDadosOriginais[mat].rec;
+            }
+        }
     }
 
     window.toggleAllChecks = (s) => document.querySelectorAll('.check-servidor').forEach(c => c.checked = s.checked);
@@ -210,15 +230,8 @@
         const dataAgora = new Date();
         const dataReg = dataAgora.toLocaleDateString('pt-BR');
 
-        // ==========================================
-        // TRAVA DE E-MAIL COM TEXTO SOLICITADO
-        // ==========================================
-        if(!email.toLowerCase().endsWith("@cmc.pr.gov.br")) {
-            return alert("insira o e-mail institucional de domínio @cmc.pr.gov.br.");
-        }
-        // ==========================================
-
-        if(!mesAno || !responsavel) return alert("Preencha a lotação, o responsável e o mês de referência!");
+        if(!email.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("insira o e-mail institucional de domínio @cmc.pr.gov.br.");
+        if(!mesAno || !responsavel) return alert("Preencha todos os campos corretamente!");
 
         const registrosExportar = [];
         const dadosPDF = [];
@@ -226,7 +239,7 @@
 
         document.querySelectorAll("#tabelaBody tr").forEach((tr, i) => {
             if (document.getElementById(`check-${i}`).checked) {
-                const mat = tr.cells[1].innerText;
+                const mat = tr.querySelector('.mat-valor').innerText;
                 const nome = tr.cells[2].innerText;
                 const periodo = document.getElementById(`periodo-${i}`).value;
                 const presenca = document.getElementById(`presenca-${i}`).value.toUpperCase();
@@ -240,7 +253,14 @@
                     document.getElementById(`linha-${i}`).classList.remove("is-invalid-row");
                 }
 
-                registrosExportar.push([dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
+                // ORDEM EXATA CONFORME SOLICITADO PARA O GOOGLE SHEETS:
+                // Data; Mês/Ano; Responsável; Matrícula; Nome; Lotação; Período; Presença; Falta; Atestados; Recesso
+                registrosExportar.push([
+                    dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca,
+                    faltas || "-", atestados || "-", recesso || "-"
+                ]);
+
+                // Dados reduzidos para a tabela visual do PDF
                 dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
             }
         });
@@ -249,8 +269,9 @@
         if (registrosExportar.length === 0) return alert("⚠️ Selecione ao menos um estagiário.");
 
         const btn = document.getElementById("btnGerarPDF");
-        const textoOriginal = btn.innerHTML; btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
+        btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
 
+        // Envio para Sheets
         fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosExportar }) });
 
         const { jsPDF } = window.jspdf;
@@ -259,12 +280,10 @@
         const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
         const nomeMes = meses[parseInt(mesNum) - 1].toLowerCase();
 
-        let logoWidth = 35; let logoHeight = 15;
+        // Cabeçalho (Padrão Comissionados)
         try {
             const img = document.getElementById("imgLogo");
-            if (img.complete && img.naturalHeight !== 0) {
-                doc.addImage(img, 'PNG', 14, 12, 35, 15);
-            }
+            if (img.complete && img.naturalHeight !== 0) doc.addImage(img, 'PNG', 14, 12, 35, 15);
         } catch(e) {}
         doc.setLineWidth(0.5); doc.setDrawColor(180, 180, 180); doc.line(54, 12, 54, 27);
         doc.setTextColor(0,0,0); doc.setFontSize(11); doc.setFont("helvetica", "bold");
@@ -291,7 +310,7 @@
         doc.text("____________________________________________________", 105, finalY + 20, { align: 'center' });
         doc.text("Assinatura do Responsável", 105, finalY + 25, { align: 'center' });
         doc.setFont("helvetica", "bold"); doc.text(responsavel, 105, finalY + 30, { align: 'center' });
-        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
+        doc.setFontSize(8); doc.setTextColor(100, 100, 100);
         doc.text(`Documento gerado por: ${email}`, 105, finalY + 36, { align: 'center' });
         doc.text(`Data e Hora da geração: ${dataReg} às ${dataAgora.toLocaleTimeString('pt-BR')}`, 105, finalY + 40, { align: 'center' });
 
@@ -302,11 +321,13 @@
         }
 
         doc.save(`Frequencia_Estagiarios_${lotacao.replace(/\s+/g, '_')}_${mesNum}_${ano}.pdf`);
+        
         setTimeout(() => {
-            window.open(LINK_FORMS_ENVIO, "_blank");
-            btn.innerHTML = textoOriginal; btn.disabled = false;
-            alert("✅ Dados enviados com sucesso! Relatório PDF baixado.\n\nAnexe o arquivo na aba que acabou de se abrir.");
-        }, 800);
+            const novaAba = window.open(LINK_FORMS_ENVIO, "_blank");
+            if(novaAba) novaAba.focus();
+            btn.innerHTML = "📄 Gerar Relatório e Ir para o Envio"; btn.disabled = false;
+            alert("✅ Dados enviados com sucesso! Relatório PDF baixado. Anexe o arquivo na aba que acabou de se abrir.\n\n(Se a aba não abriu, verifique se o seu navegador bloqueou o pop-up)");
+        }, 1200);
     });
 </script>
 </body>
