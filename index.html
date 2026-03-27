@@ -23,10 +23,49 @@
         .col-periodo { min-width: 120px; }
         .col-controle { min-width: 130px; }
         .form-check-input { cursor: pointer; transform: scale(1.2); }
-        .is-invalid-row { background-color: #fff3f3 !important; border: 1px solid #dc3545 !important; }
+        
+        /* Destaque visual de erros importado do Comissionados */
+        .input-invalido {
+            border-color: #dc3545 !important;
+            background-color: #fff5f5 !important;
+            box-shadow: 0 0 0 2px rgba(220,53,69,0.15) !important;
+        }
+        .linha-invalida td {
+            background-color: #fff5f5 !important;
+        }
+
+        /* Container de notificações flutuantes (Toasts) */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast-msg {
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #fff;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+            animation: slideIn 0.3s ease;
+            max-width: 360px;
+        }
+        .toast-erro    { background-color: #dc3545; }
+        .toast-sucesso { background-color: #198754; }
+        .toast-aviso   { background-color: #fd7e14; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
     </style>
 </head>
 <body>
+
+<div id="toast-container"></div>
 
 <div class="container-fluid mt-4 mb-5 px-4">
     <div class="card p-4 p-md-5">
@@ -87,6 +126,11 @@
                 </table>
             </div>
 
+            <div id="areaErros" class="d-none alert alert-danger mt-3 shadow-sm">
+                <h6 class="fw-bold mb-2">⛔ Corrija os erros antes de gerar o PDF:</h6>
+                <ul id="listaErros" class="mb-0 small"></ul>
+            </div>
+
             <div class="mt-4 border-top pt-4 text-center">
                 <h6 class="text-muted fw-bold mb-3">FINALIZAÇÃO</h6>
                 <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">📄 Gerar Relatório e Ir para o Envio</button>
@@ -100,14 +144,21 @@
 
 <script>
     const LINK_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRnZTxK2HHvmg9JNSwx8asM__Wh_uiT2jaiZO625oe06gdf-VMiaLVDkjqggf8pbmtriOZFkrKIMDb1/pub?gid=0&single=true&output=csv";
-    
-    // LINK DO APPSCRIPT ATUALIZADO AQUI
     const URL_APPSCRIPT_SALVAR = "https://script.google.com/macros/s/AKfycbxSmfw0IlBVVMqiaDR5ijR5ioKY4dyHDOvDAOUT0_oBtaWlYGvvDUTBU5ZyiUUYh5NYeQ/exec";
-    
     const LINK_FORMS_ENVIO = "https://docs.google.com/forms/d/e/1FAIpQLScGy83OEf2D1ipQMSFKWNIKeXtMbSXQ-S5AqMEgBFcUVbDRbA/viewform";
 
     let baseGeral = [];
     let cacheDadosOriginais = {}; 
+
+    // Função para exibir as notificações flutuantes
+    function mostrarToast(mensagem, tipo = 'aviso') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast-msg toast-${tipo}`;
+        toast.textContent = mensagem;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+    }
 
     window.addEventListener('DOMContentLoaded', () => {
         const data = new Date();
@@ -155,7 +206,11 @@
         const respInput = document.getElementById("selectResponsavel");
         const respDatalist = document.getElementById("listaResponsaveisDatalist");
         respDatalist.innerHTML = ""; respInput.value = "";
+        
         document.getElementById("areaTabela").classList.add("d-none");
+        document.getElementById("areaErros").classList.add("d-none");
+        document.getElementById("listaErros").innerHTML = "";
+
         if (!lotSelected) return;
         const estagiariosLotacao = baseGeral.filter(s => buscarValorInteligente(s, ["lotacao"]) === lotSelected);
         const responsaveis = [...new Set(estagiariosLotacao.map(s => buscarValorInteligente(s, ["responsavel"])))].filter(Boolean);
@@ -183,17 +238,17 @@
             
             tbody.innerHTML += `
                 <tr id="linha-${i}">
-                    <td><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked></td>
+                    <td><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked onclick="limparErroDaLinha(${i})"></td>
                     <td class="text-secondary fw-bold text-start mat-valor">${mat}</td>
                     <td class="text-dark text-start">${nome}</td>
-                    <td><input type="text" class="form-control form-control-sm input-text" id="periodo-${i}" value="${per}"></td>
-                    <td><select class="form-select form-select-sm" id="presenca-${i}" onchange="toggleCamposJustificativa(${i})">
+                    <td><input type="text" class="form-control form-control-sm input-text" id="periodo-${i}" value="${per}" oninput="limparErroDaLinha(${i})"></td>
+                    <td><select class="form-select form-select-sm" id="presenca-${i}" onchange="toggleCamposJustificativa(${i}); limparErroDaLinha(${i})">
                         <option value="integral" ${!parcial ? "selected" : ""}>Integral</option>
                         <option value="parcial" ${parcial ? "selected" : ""}>Parcial</option>
                     </select></td>
-                    <td><input type="text" class="form-control form-control-sm input-text" id="faltas-${i}" value="${fal}" ${parcial ? '' : 'disabled'}></td>
-                    <td><input type="text" class="form-control form-control-sm input-text" id="atestados-${i}" value="${ate}" ${parcial ? '' : 'disabled'}></td>
-                    <td><input type="text" class="form-control form-control-sm input-text" id="recesso-${i}" value="${rec}" ${parcial ? '' : 'disabled'}></td>
+                    <td><input type="text" class="form-control form-control-sm input-text" id="faltas-${i}" value="${fal}" ${parcial ? '' : 'disabled'} oninput="limparErroDaLinha(${i})"></td>
+                    <td><input type="text" class="form-control form-control-sm input-text" id="atestados-${i}" value="${ate}" ${parcial ? '' : 'disabled'} oninput="limparErroDaLinha(${i})"></td>
+                    <td><input type="text" class="form-control form-control-sm input-text" id="recesso-${i}" value="${rec}" ${parcial ? '' : 'disabled'} oninput="limparErroDaLinha(${i})"></td>
                 </tr>`;
         });
         document.getElementById("areaTabela").classList.remove("d-none");
@@ -207,20 +262,98 @@
         const r = document.getElementById(`recesso-${i}`);
 
         if (select.value === "integral") {
+            if (f.value) f.dataset.memoria = f.value;
+            if (a.value) a.dataset.memoria = a.value;
+            if (r.value) r.dataset.memoria = r.value;
+
             f.disabled = a.disabled = r.disabled = true;
             f.value = a.value = r.value = "";
         } else {
             f.disabled = a.disabled = r.disabled = false;
-            if(cacheDadosOriginais[mat]){
-                f.value = cacheDadosOriginais[mat].fal;
-                a.value = cacheDadosOriginais[mat].ate;
-                r.value = cacheDadosOriginais[mat].rec;
-            }
+            
+            // Prioriza valor digitado anteriormente, senao busca do cache da planilha
+            if(f.dataset.memoria) { f.value = f.dataset.memoria; } else if(cacheDadosOriginais[mat]){ f.value = cacheDadosOriginais[mat].fal; }
+            if(a.dataset.memoria) { a.value = a.dataset.memoria; } else if(cacheDadosOriginais[mat]){ a.value = cacheDadosOriginais[mat].ate; }
+            if(r.dataset.memoria) { r.value = r.dataset.memoria; } else if(cacheDadosOriginais[mat]){ r.value = cacheDadosOriginais[mat].rec; }
         }
     }
 
     window.toggleAllChecks = (s) => document.querySelectorAll('.check-servidor').forEach(c => c.checked = s.checked);
-    document.getElementById("btnLimpar").addEventListener("click", () => location.reload());
+
+    // Função que remove os alertas visuais da linha ao digitar
+    window.limparErroDaLinha = function(i) {
+        const linha = document.getElementById(`linha-${i}`);
+        if (!linha) return;
+        linha.classList.remove('linha-invalida');
+        ['periodo', 'faltas', 'atestados', 'recesso'].forEach(campo => {
+            const el = document.getElementById(`${campo}-${i}`);
+            if (el) el.classList.remove('input-invalido');
+        });
+    }
+
+    // Função principal de validação adaptada para estagiários
+    function validarFormulario() {
+        const linhas = document.querySelectorAll("#tabelaBody tr");
+        const erros = [];
+        let valido = true;
+
+        document.getElementById("areaErros").classList.add("d-none");
+        document.getElementById("listaErros").innerHTML = "";
+        document.querySelectorAll('.linha-invalida').forEach(l => l.classList.remove('linha-invalida'));
+        document.querySelectorAll('.input-invalido').forEach(el => el.classList.remove('input-invalido'));
+
+        linhas.forEach((tr, i) => {
+            const checkbox = document.getElementById(`check-${i}`);
+            if (!checkbox || !checkbox.checked) return;
+
+            const nome = tr.cells[2].innerText.trim();
+            const periodo = document.getElementById(`periodo-${i}`);
+            const presenca = document.getElementById(`presenca-${i}`).value;
+            const faltas = document.getElementById(`faltas-${i}`);
+            const atestados = document.getElementById(`atestados-${i}`);
+            const recesso = document.getElementById(`recesso-${i}`);
+            const errosLinha = [];
+
+            if (!periodo.value.trim()) {
+                periodo.classList.add('input-invalido');
+                errosLinha.push("campo Período está vazio");
+            }
+
+            if (presenca === "parcial") {
+                const temJustificativa = faltas.value.trim() || atestados.value.trim() || recesso.value.trim();
+                if (!temJustificativa) {
+                    faltas.classList.add('input-invalido');
+                    atestados.classList.add('input-invalido');
+                    recesso.classList.add('input-invalido');
+                    errosLinha.push("presença Parcial sem informar Faltas, Atestados ou Recesso");
+                }
+            }
+
+            if (errosLinha.length > 0) {
+                valido = false;
+                tr.classList.add('linha-invalida');
+                erros.push(`<strong>${nome}</strong>: ${errosLinha.join("; ")}`);
+            }
+        });
+
+        if (!valido) {
+            const lista = document.getElementById("listaErros");
+            erros.forEach(e => { lista.innerHTML += `<li>${e}</li>`; });
+            document.getElementById("areaErros").classList.remove("d-none");
+            document.getElementById("areaErros").scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return valido;
+    }
+
+    document.getElementById("btnLimpar").addEventListener("click", () => {
+        document.getElementById("selectLotacao").value = "";
+        document.getElementById("selectResponsavel").value = "";
+        document.getElementById("selectResponsavel").disabled = true;
+        document.getElementById("inputEmail").value = "";
+        document.getElementById("areaTabela").classList.add("d-none");
+        document.getElementById("areaErros").classList.add("d-none");
+        document.getElementById("tabelaBody").innerHTML = "";
+    });
 
     document.getElementById("btnGerarPDF").addEventListener("click", () => {
         const mesAno = document.getElementById("inputMesAno").value;
@@ -230,12 +363,17 @@
         const dataAgora = new Date();
         const dataReg = dataAgora.toLocaleDateString('pt-BR');
 
-        if(!email.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("insira o e-mail institucional de domínio @cmc.pr.gov.br.");
-        if(!mesAno || !responsavel) return alert("Preencha todos os campos corretamente!");
+        if(!email.toLowerCase().endsWith("@cmc.pr.gov.br")) return mostrarToast("insira o e-mail institucional de domínio @cmc.pr.gov.br.", "erro");
+        if(!mesAno || !responsavel) return mostrarToast("Preencha a Lotação, Responsável e Mês/Ano corretamente!", "erro");
+
+        // Executa a validação visual do formulário
+        if (!validarFormulario()) {
+            mostrarToast("Corrija os erros destacados na tabela antes de continuar.", "erro");
+            return;
+        }
 
         const registrosExportar = [];
         const dadosPDF = [];
-        let erroJustificativa = false;
 
         document.querySelectorAll("#tabelaBody tr").forEach((tr, i) => {
             if (document.getElementById(`check-${i}`).checked) {
@@ -243,36 +381,21 @@
                 const nome = tr.cells[2].innerText;
                 const periodo = document.getElementById(`periodo-${i}`).value;
                 const presenca = document.getElementById(`presenca-${i}`).value.toUpperCase();
-                const faltas = document.getElementById(`faltas-${i}`).value.trim();
-                const atestados = document.getElementById(`atestados-${i}`).value.trim();
-                const recesso = document.getElementById(`recesso-${i}`).value.trim();
+                const faltas = document.getElementById(`faltas-${i}`).value.trim() || "-";
+                const atestados = document.getElementById(`atestados-${i}`).value.trim() || "-";
+                const recesso = document.getElementById(`recesso-${i}`).value.trim() || "-";
 
-                if (presenca === "PARCIAL" && faltas === "" && atestados === "" && recesso === "") {
-                    erroJustificativa = true; document.getElementById(`linha-${i}`).classList.add("is-invalid-row");
-                } else {
-                    document.getElementById(`linha-${i}`).classList.remove("is-invalid-row");
-                }
-
-                registrosExportar.push([
-                    dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"
-                ]);
-
-                dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
+                registrosExportar.push([dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas, atestados, recesso]);
+                dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas, atestados, recesso]);
             }
         });
 
-        if (erroJustificativa) return alert("⚠️ Preencha a justificativa para presença PARCIAL.");
-        if (registrosExportar.length === 0) return alert("⚠️ Selecione ao menos um estagiário.");
+        if (registrosExportar.length === 0) return mostrarToast("Selecione ao menos um estagiário na tabela.", "aviso");
 
         const btn = document.getElementById("btnGerarPDF");
         const textoOriginal = btn.innerHTML; btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
 
-        // Requisição para o Sheets contendo exatamente a montagem que configuramos
-        fetch(URL_APPSCRIPT_SALVAR, { 
-            method: "POST", 
-            mode: "no-cors", 
-            body: JSON.stringify({ registros: registrosExportar }) 
-        });
+        fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ registros: registrosExportar }) });
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
@@ -323,13 +446,9 @@
         
         setTimeout(() => {
             const novaAba = window.open(LINK_FORMS_ENVIO, "_blank");
-            if(novaAba) {
-                novaAba.focus();
-            } else {
-                alert("⚠️ O seu navegador bloqueou a abertura da aba de envio! Por favor, clique no ícone de 'Pop-up Bloqueado' na barra de endereços (lá no topo) e permita pop-ups deste site.");
-            }
-            btn.innerHTML = "📄 Gerar Relatório e Ir para o Envio"; btn.disabled = false;
-            if(novaAba) alert("✅ Dados enviados com sucesso! Relatório PDF baixado. Anexe o arquivo na aba que acabou de se abrir.");
+            if(novaAba) novaAba.focus();
+            btn.innerHTML = textoOriginal; btn.disabled = false;
+            mostrarToast("✅ Dados enviados com sucesso! Anexe o arquivo na aba aberta.", "sucesso");
         }, 1200);
     });
 </script>
