@@ -19,7 +19,6 @@
         .input-text:disabled { background-color: #e9ecef; border-color: transparent; }
         .col-check { min-width: 40px; }
         .col-mat { min-width: 90px; }
-        .col-lotacao { min-width: 140px; }
         .col-presenca { min-width: 120px; }
         .col-periodo { min-width: 120px; }
         .col-controle { min-width: 130px; }
@@ -41,11 +40,6 @@
             <div id="statusConexao" class="badge bg-secondary p-2">Aguardando inicialização...</div>
         </div>
 
-        <div id="areaFallback" class="alert alert-warning d-none mb-4 shadow-sm">
-            <h6 class="fw-bold">⚠️ Conexão automática falhou.</h6>
-            <input type="file" id="inputArquivoCSV" accept=".csv" class="form-control form-control-sm w-50">
-        </div>
-
         <div class="row mb-4 bg-light p-3 border rounded mx-0">
             <div class="col-md-4">
                 <label class="form-label fw-bold">1. Selecione a Lotação:</label>
@@ -53,7 +47,7 @@
                 <datalist id="listaLotacoesDatalist"></datalist>
             </div>
             <div class="col-md-5 mt-3 mt-md-0">
-                <label class="form-label fw-bold">2. Responsável (Vereador/Diretor):</label>
+                <label class="form-label fw-bold">2. Responsável:</label>
                 <input class="form-control border-primary" list="listaResponsaveisDatalist" id="selectResponsavel" placeholder="Selecione a lotação primeiro..." disabled>
                 <datalist id="listaResponsaveisDatalist"></datalist>
             </div>
@@ -79,15 +73,13 @@
                 <table class="table table-hover align-middle bg-white mb-0 text-center">
                     <thead class="table-light">
                         <tr>
-                            <th class="col-check align-middle">
-                                <input class="form-check-input border-secondary" type="checkbox" id="checkAll" checked onclick="toggleAllChecks(this)">
-                            </th>
+                            <th class="col-check align-middle"><input class="form-check-input border-secondary" type="checkbox" id="checkAll" checked onclick="toggleAllChecks(this)"></th>
                             <th class="text-start col-mat">Matrícula</th>
                             <th class="text-start">Nome do Estagiário</th>
                             <th class="col-periodo">Período</th>
                             <th class="col-presenca">Presença</th>
                             <th class="col-controle">Faltas</th>
-                            <th class="col-controle">Atestados</th>
+                            <th class="col-controle">Atestados/<br>Afastamentos</th>
                             <th class="col-controle">Recesso</th>
                         </tr>
                     </thead>
@@ -97,9 +89,7 @@
 
             <div class="mt-4 border-top pt-4 text-center">
                 <h6 class="text-muted fw-bold mb-3">FINALIZAÇÃO</h6>
-                <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">
-                    📄 Gerar Relatório e Ir para o Envio
-                </button>
+                <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">📄 Gerar Relatório e Ir para o Envio</button>
                 <div class="text-start mt-4">
                     <button id="btnLimpar" class="btn btn-outline-secondary btn-sm fw-bold">🔄 Limpar Tela</button>
                 </div>
@@ -129,7 +119,7 @@
         for (let chave of chaves) {
             const chaveLimpa = chave.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
             for (let termo of termosBusca) {
-                if (chaveLimpa.includes(termo)) return obj[chave] || "";
+                if (chaveLimpa === termo || chaveLimpa.includes(termo)) return obj[chave] || "";
             }
         }
         return "";
@@ -137,9 +127,7 @@
 
     function tentaConectarPlanilha() {
         Papa.parse(LINK_CSV + "&t=" + new Date().getTime(), {
-            download: true,
-            header: true,
-            skipEmptyLines: true,
+            download: true, header: true, skipEmptyLines: true,
             complete: function(results) {
                 if (results.data) {
                     baseGeral = results.data;
@@ -166,7 +154,7 @@
         document.getElementById("areaTabela").classList.add("d-none");
         if (!lotSelected) return;
         const estagiariosLotacao = baseGeral.filter(s => buscarValorInteligente(s, ["lotacao"]) === lotSelected);
-        const responsaveis = [...new Set(estagiariosLotacao.map(s => buscarValorInteligente(s, ["vereador", "responsavel"])))].filter(Boolean);
+        const responsaveis = [...new Set(estagiariosLotacao.map(s => buscarValorInteligente(s, ["responsavel"])))].filter(Boolean);
         respDatalist.innerHTML = responsaveis.map(r => `<option value="${r}">`).join('');
         respInput.disabled = false;
         if (responsaveis.length === 1) respInput.value = responsaveis[0];
@@ -179,12 +167,13 @@
         document.getElementById("spanLotacao").textContent = lotacao;
         servidores.forEach((servidor, i) => {
             const mat = buscarValorInteligente(servidor, ["matricula"]);
-            const nome = buscarValorInteligente(servidor, ["nome"]);
+            const nome = buscarValorInteligente(servidor, ["nome do estagiario", "nome"]);
             const per = buscarValorInteligente(servidor, ["periodo"]);
-            const rec = buscarValorInteligente(servidor, ["recesso", "ferias"]);
             const fal = buscarValorInteligente(servidor, ["falta"]);
-            const ate = buscarValorInteligente(servidor, ["atestado"]);
+            const ate = buscarValorInteligente(servidor, ["atestados", "afastamentos"]);
+            const rec = buscarValorInteligente(servidor, ["recesso"]);
             const parcial = (rec.trim() !== "" || fal.trim() !== "" || ate.trim() !== "");
+            
             tbody.innerHTML += `
                 <tr id="linha-${i}">
                     <td><input class="form-check-input border-secondary check-servidor" type="checkbox" id="check-${i}" checked></td>
@@ -206,22 +195,33 @@
     window.toggleCamposJustificativa = function(i) {
         const p = document.getElementById(`presenca-${i}`).value === "integral";
         [`faltas-${i}`, `atestados-${i}`, `recesso-${i}`].forEach(id => {
-            const el = document.getElementById(id);
-            el.disabled = p; if(p) el.value = "";
+            const el = document.getElementById(id); el.disabled = p; if(p) el.value = "";
         });
     }
 
     window.toggleAllChecks = (s) => document.querySelectorAll('.check-servidor').forEach(c => c.checked = s.checked);
+    document.getElementById("btnLimpar").addEventListener("click", () => location.reload());
 
     document.getElementById("btnGerarPDF").addEventListener("click", () => {
         const mesAno = document.getElementById("inputMesAno").value;
         const responsavel = document.getElementById("selectResponsavel").value;
         const email = document.getElementById("inputEmail").value.trim();
         const lotacao = document.getElementById("spanLotacao").textContent;
-        
-        if(!mesAno || !responsavel || !email.toLowerCase().endsWith("@cmc.pr.gov.br")) return alert("Preencha todos os campos corretamente!");
+        const dataAgora = new Date();
+        const dataReg = dataAgora.toLocaleDateString('pt-BR');
+
+        // ==========================================
+        // TRAVA DE E-MAIL COM TEXTO SOLICITADO
+        // ==========================================
+        if(!email.toLowerCase().endsWith("@cmc.pr.gov.br")) {
+            return alert("insira o e-mail institucional de domínio @cmc.pr.gov.br.");
+        }
+        // ==========================================
+
+        if(!mesAno || !responsavel) return alert("Preencha a lotação, o responsável e o mês de referência!");
 
         const registrosExportar = [];
+        const dadosPDF = [];
         let erroJustificativa = false;
 
         document.querySelectorAll("#tabelaBody tr").forEach((tr, i) => {
@@ -235,14 +235,13 @@
                 const recesso = document.getElementById(`recesso-${i}`).value.trim();
 
                 if (presenca === "PARCIAL" && faltas === "" && atestados === "" && recesso === "") {
-                    erroJustificativa = true;
-                    document.getElementById(`linha-${i}`).classList.add("is-invalid-row");
+                    erroJustificativa = true; document.getElementById(`linha-${i}`).classList.add("is-invalid-row");
                 } else {
                     document.getElementById(`linha-${i}`).classList.remove("is-invalid-row");
                 }
 
-                // ORDENAÇÃO EXATA PARA A PLANILHA: Matrícula, Nome, Lotação, Período, Presença, Faltas, Atestados, Recesso
-                registrosExportar.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
+                registrosExportar.push([dataReg, mesAno, responsavel, mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
+                dadosPDF.push([mat, nome, lotacao, periodo, presenca, faltas || "-", atestados || "-", recesso || "-"]);
             }
         });
 
@@ -250,14 +249,9 @@
         if (registrosExportar.length === 0) return alert("⚠️ Selecione ao menos um estagiário.");
 
         const btn = document.getElementById("btnGerarPDF");
-        const textoOriginal = btn.innerHTML;
-        btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
+        const textoOriginal = btn.innerHTML; btn.innerHTML = "⏳ Processando..."; btn.disabled = true;
 
-        fetch(URL_APPSCRIPT_SALVAR, { 
-            method: "POST", 
-            mode: "no-cors", 
-            body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosExportar }) 
-        });
+        fetch(URL_APPSCRIPT_SALVAR, { method: "POST", mode: "no-cors", body: JSON.stringify({ mesAno, vereador: responsavel, registros: registrosExportar }) });
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
@@ -265,7 +259,7 @@
         const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
         const nomeMes = meses[parseInt(mesNum) - 1].toLowerCase();
 
-        // Cabeçalho PDF
+        let logoWidth = 35; let logoHeight = 15;
         try {
             const img = document.getElementById("imgLogo");
             if (img.complete && img.naturalHeight !== 0) {
@@ -276,35 +270,42 @@
         doc.setTextColor(0,0,0); doc.setFontSize(11); doc.setFont("helvetica", "bold");
         doc.text("FORMULÁRIO DE FREQUÊNCIA DE ESTAGIÁRIOS", 59, 18);
         doc.setFontSize(10); doc.setFont("helvetica", "normal");
-        doc.text(`À DGEP, informamos a frequência de ${nomeMes}/${ano}.`, 14, 45);
-        doc.setFont("helvetica", "bold"); doc.text(`Responsável: ${responsavel}`, 14, 60);
+        doc.text("À Diretoria de Gestão de Pessoas (DGEP),", 14, 43);
+        doc.text(`Informamos o controle de frequência dos estagiários vinculados a este gabinete/lotação, referente ao mês de ${nomeMes} de ${ano}.`, 14, 50, { maxWidth: 182 });
+        doc.setFont("helvetica", "bold"); doc.text(`Responsável: ${responsavel}`, 14, 67);
 
         doc.autoTable({
-            startY: 65, theme: 'grid', 
-            head: [['Matrícula', 'Nome', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atest.', 'Recesso']],
-            body: registrosExportar,
-            styles: { fontSize: 7.5, halign: 'center' },
+            startY: 74, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', halign: 'center' },
+            head: [['Matrícula', 'Nome', 'Lotação', 'Período', 'Presença', 'Faltas', 'Atest./Afast.', 'Recesso']], body: dadosPDF,
+            styles: { fontSize: 7, halign: 'center' }, margin: { bottom: 25 },
             didDrawPage: function() {
-                doc.setFontSize(7); doc.text("Frequência mensal de estagiários - CMC.", 14, 285);
-                const totalPages = doc.internal.getNumberOfPages();
-                doc.text(`Página ${doc.internal.getCurrentPageInfo().pageNumber} de ${totalPages}`, 196, 16, { align: 'right' });
+                doc.setFontSize(7); doc.setFont("helvetica", "normal");
+                doc.text("Os Gabinetes Parlamentares devem enviar à Diretoria de Gestão de Pessoas (DGEP) da CMC o formulário de frequência dos estagiários relativo ao mês anterior.", 14, 282, { maxWidth: 182 });
             }
         });
 
         let finalY = doc.lastAutoTable.finalY + 15;
-        const dataAgora = new Date();
+        if (finalY + 50 > 275) { doc.addPage(); finalY = 30; }
         doc.setFontSize(10); doc.setFont("helvetica", "normal");
-        doc.text(`Data: ${dataAgora.toLocaleDateString('pt-BR')}`, 14, finalY);
-        doc.text("__________________________________", 105, finalY + 20, { align: 'center' });
+        doc.text(`Data: ${dataReg}`, 14, finalY);
+        doc.text("____________________________________________________", 105, finalY + 20, { align: 'center' });
         doc.text("Assinatura do Responsável", 105, finalY + 25, { align: 'center' });
-        doc.setFontSize(8); doc.setTextColor(100, 100, 100);
-        doc.text(`Gerado por: ${email} em ${dataAgora.toLocaleString('pt-BR')}`, 105, finalY + 35, { align: 'center' });
+        doc.setFont("helvetica", "bold"); doc.text(responsavel, 105, finalY + 30, { align: 'center' });
+        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 100, 100);
+        doc.text(`Documento gerado por: ${email}`, 105, finalY + 36, { align: 'center' });
+        doc.text(`Data e Hora da geração: ${dataReg} às ${dataAgora.toLocaleTimeString('pt-BR')}`, 105, finalY + 40, { align: 'center' });
+
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+            doc.text(`Página ${i} de ${totalPages}`, 196, 16, { align: 'right' });
+        }
 
         doc.save(`Frequencia_Estagiarios_${lotacao.replace(/\s+/g, '_')}_${mesNum}_${ano}.pdf`);
         setTimeout(() => {
             window.open(LINK_FORMS_ENVIO, "_blank");
             btn.innerHTML = textoOriginal; btn.disabled = false;
-            alert("✅ Dados enviados e PDF baixado!");
+            alert("✅ Dados enviados com sucesso! Relatório PDF baixado.\n\nAnexe o arquivo na aba que acabou de se abrir.");
         }, 800);
     });
 </script>
