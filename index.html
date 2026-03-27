@@ -24,7 +24,6 @@
         .col-controle { min-width: 130px; }
         .form-check-input { cursor: pointer; transform: scale(1.2); }
         
-        /* Destaque visual de erros importado do Comissionados */
         .input-invalido {
             border-color: #dc3545 !important;
             background-color: #fff5f5 !important;
@@ -34,7 +33,6 @@
             background-color: #fff5f5 !important;
         }
 
-        /* Container de notificações flutuantes (Toasts) */
         #toast-container {
             position: fixed;
             top: 20px;
@@ -133,9 +131,9 @@
 
             <div class="mt-4 border-top pt-4 text-center">
                 <h6 class="text-muted fw-bold mb-3">FINALIZAÇÃO</h6>
-                <button id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">📄 Gerar Relatório e Ir para o Envio</button>
+                <button type="button" id="btnGerarPDF" class="btn btn-success btn-lg px-5 fw-bold shadow-sm mb-2">📄 Gerar Relatório e Ir para o Envio</button>
                 <div class="text-start mt-4">
-                    <button id="btnLimpar" class="btn btn-outline-secondary btn-sm fw-bold">🔄 Limpar Tela</button>
+                    <button type="button" id="btnLimpar" class="btn btn-outline-secondary btn-sm fw-bold">🔄 Limpar Tela</button>
                 </div>
             </div>
         </div>
@@ -150,7 +148,6 @@
     let baseGeral = [];
     let cacheDadosOriginais = {}; 
 
-    // Função para exibir as notificações flutuantes
     function mostrarToast(mensagem, tipo = 'aviso') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
@@ -161,13 +158,17 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+        configurarMesPadrao();
+        tentaConectarPlanilha();
+    });
+
+    function configurarMesPadrao() {
         const data = new Date();
         let mes = data.getMonth(); 
         let ano = data.getFullYear();
         if (mes === 0) { mes = 12; ano = ano - 1; }
         document.getElementById("inputMesAno").value = `${ano}-${String(mes).padStart(2, '0')}`;
-        tentaConectarPlanilha();
-    });
+    }
 
     function buscarValorInteligente(obj, termosBusca) {
         const chaves = Object.keys(obj);
@@ -205,18 +206,26 @@
         const lotSelected = e.target.value;
         const respInput = document.getElementById("selectResponsavel");
         const respDatalist = document.getElementById("listaResponsaveisDatalist");
-        respDatalist.innerHTML = ""; respInput.value = "";
+        
+        respDatalist.innerHTML = ""; 
+        respInput.value = "";
         
         document.getElementById("areaTabela").classList.add("d-none");
         document.getElementById("areaErros").classList.add("d-none");
         document.getElementById("listaErros").innerHTML = "";
 
-        if (!lotSelected) return;
+        if (!lotSelected) {
+            respInput.disabled = true;
+            return;
+        }
+
         const estagiariosLotacao = baseGeral.filter(s => buscarValorInteligente(s, ["lotacao"]) === lotSelected);
         const responsaveis = [...new Set(estagiariosLotacao.map(s => buscarValorInteligente(s, ["responsavel"])))].filter(Boolean);
+        
         respDatalist.innerHTML = responsaveis.map(r => `<option value="${r}">`).join('');
         respInput.disabled = false;
         if (responsaveis.length === 1) respInput.value = responsaveis[0];
+        
         montarTabela(estagiariosLotacao, lotSelected);
     });
 
@@ -270,8 +279,6 @@
             f.value = a.value = r.value = "";
         } else {
             f.disabled = a.disabled = r.disabled = false;
-            
-            // Prioriza valor digitado anteriormente, senao busca do cache da planilha
             if(f.dataset.memoria) { f.value = f.dataset.memoria; } else if(cacheDadosOriginais[mat]){ f.value = cacheDadosOriginais[mat].fal; }
             if(a.dataset.memoria) { a.value = a.dataset.memoria; } else if(cacheDadosOriginais[mat]){ a.value = cacheDadosOriginais[mat].ate; }
             if(r.dataset.memoria) { r.value = r.dataset.memoria; } else if(cacheDadosOriginais[mat]){ r.value = cacheDadosOriginais[mat].rec; }
@@ -280,7 +287,6 @@
 
     window.toggleAllChecks = (s) => document.querySelectorAll('.check-servidor').forEach(c => c.checked = s.checked);
 
-    // Função que remove os alertas visuais da linha ao digitar
     window.limparErroDaLinha = function(i) {
         const linha = document.getElementById(`linha-${i}`);
         if (!linha) return;
@@ -291,7 +297,6 @@
         });
     }
 
-    // Função principal de validação adaptada para estagiários
     function validarFormulario() {
         const linhas = document.querySelectorAll("#tabelaBody tr");
         const erros = [];
@@ -345,14 +350,30 @@
         return valido;
     }
 
+    // =========================================================================
+    // BOTÃO LIMPAR REFEITO: Limpa TUDO e reseta a página perfeitamente
+    // =========================================================================
     document.getElementById("btnLimpar").addEventListener("click", () => {
+        // 1. Limpa os campos superiores
         document.getElementById("selectLotacao").value = "";
         document.getElementById("selectResponsavel").value = "";
         document.getElementById("selectResponsavel").disabled = true;
         document.getElementById("inputEmail").value = "";
+        
+        // 2. Reseta a Data para o padrão original
+        configurarMesPadrao();
+
+        // 3. Esconde e limpa a tabela e área de erros
         document.getElementById("areaTabela").classList.add("d-none");
         document.getElementById("areaErros").classList.add("d-none");
         document.getElementById("tabelaBody").innerHTML = "";
+        document.getElementById("listaErros").innerHTML = "";
+
+        // 4. Mostra uma notificação de sucesso
+        mostrarToast("Tela limpa com sucesso!", "sucesso");
+
+        // 5. Rola a página de volta para o topo
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
     document.getElementById("btnGerarPDF").addEventListener("click", () => {
@@ -366,7 +387,6 @@
         if(!email.toLowerCase().endsWith("@cmc.pr.gov.br")) return mostrarToast("insira o e-mail institucional de domínio @cmc.pr.gov.br.", "erro");
         if(!mesAno || !responsavel) return mostrarToast("Preencha a Lotação, Responsável e Mês/Ano corretamente!", "erro");
 
-        // Executa a validação visual do formulário
         if (!validarFormulario()) {
             mostrarToast("Corrija os erros destacados na tabela antes de continuar.", "erro");
             return;
